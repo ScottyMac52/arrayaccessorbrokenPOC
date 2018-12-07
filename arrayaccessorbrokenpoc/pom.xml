@@ -14,7 +14,7 @@
 		<mule.version>3.8.5</mule.version>
 		<mule.tools.version>1.2</mule.tools.version>
 		<munit.version>1.3.7</munit.version>
-		<mule.munit.support.version>3.8.6</mule.munit.support.version>
+		<mule.munit.support.version>3.8.5</mule.munit.support.version>
 		<mule-code-coverage>70</mule-code-coverage>
 	</properties>
 
@@ -112,14 +112,6 @@
 			<scope>provided</scope>
 		</dependency>
 		<!-- Mule Transports -->
-<!--  
-		<dependency>
-			<groupId>org.mule.transports</groupId>
-			<artifactId>mule-transport-file</artifactId>
-			<version>${mule.version}</version>
-			<scope>provided</scope>
-		</dependency>
--->
 		<dependency>
 			<groupId>org.mule.transports</groupId>
 			<artifactId>mule-transport-http</artifactId>

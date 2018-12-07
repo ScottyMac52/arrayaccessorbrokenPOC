@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="arrayaccessorbrokenpocFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/" doc:name="HTTP"/>
+        <flow-ref name="RunArrayAccessor" doc:name="Run Array Accessor"/>
+        <logger message="Payload is #[payload]" level="INFO" category="Show payload" doc:name="Logger Show Payload"/>
+    </flow>
+    <sub-flow name="RunArrayAccessor">
+        <dw:transform-message doc:name="Group Lineitems and Discounts" metadata:id="8a41d0ff-8462-4361-84d8-c831d5f60264">
+            <dw:input-payload doc:sample="sample_data\map.dwl"/>
+            <dw:set-variable variableName="discounts"><![CDATA[%dw 1.0
+%output application/java
+---
+(payload filter ($.DIM_DISCOUNT_ID > 0 and ($.DISCOUNTID == null or $.DISCOUNTID > 0)) 
+groupBy $.ORDERNUMBER)]]></dw:set-variable>
+            <dw:set-variable variableName="lineItems"><![CDATA[%dw 1.0
+%output application/java
+---
+payload filter ($.DIM_DISCOUNT_ID <= 0 and $.DISCOUNTID != null and $.DISCOUNTID <= 0)]]></dw:set-variable>
+        </dw:transform-message>
+        <set-payload value="#[null]" doc:name="Clear Payload Memory"/>
+        <dw:transform-message doc:name="Group Orders and Items">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+%type currency = :number { format: "#.##"}
+%function getDiscounts(orderNumber, itemCode) 
+flowVars.discounts.'$orderNumber'
+filter ($.ITEMCODEID == itemCode)
+%function getCoupons(coupons)
+"" when coupons == null
+otherwise "" when (sizeOf coupons) == 0
+otherwise createPipedCoupons(coupons filter $ != null)
+%function createPipedCoupons(coupons)
+"" when coupons == null
+otherwise "" when (sizeOf coupons) == 0
+otherwise ("|" ++ ((coupons distinctBy $) joinBy "|"))
+---
+flatten (flowVars.lineItems groupBy $.ORDERNUMBER pluck (order, orderNumber) -> ({
+	"items": order groupBy $.ITEMCODEID pluck (item, itemCode) -> using (discounts = getDiscounts(orderNumber, item.ITEMCODEID[0])){
+		"item": item.ITEM[0],
+		"price": item.PRICE[0] as :currency,
+		"order": item.ORDERNUMBER[0],
+		"timestamp": item.TIMESTAMP[0],
+		"quantity": sum (item.QUANTITY),
+		"email": item.EMAIL[0],
+		"i_itemcode": item.ITEMCODEID[0],
+		"i_storeid": item.I_STOREID[0],
+		"i_productid": item.I_PRODUCTID[0],
+		"s_productdescription": item.S_PRODUCTDESCRIPTION[0],
+		"i_numberofoffers": 0 when discounts == null
+						otherwise 0 when (sizeOf discounts) == 0
+						otherwise sizeOf (discounts distinctBy $.DISCOUNTID),
+		"f_discountvalueamount": 0 when discounts == null
+						otherwise 0 when (sizeOf discounts) == 0
+						otherwise (sum (discounts.DISCAMT)) as :currency,
+		"s_listofdiscountids": "" when discounts == null
+						otherwise "" when (sizeOf discounts) == 0
+						otherwise ((((discounts distinctBy $.DISCOUNTID).DISCOUNTID)
+						joinBy "|"	) ++ (getCoupons((discounts distinctBy $.DISCOUNTID).COUPON)))
+	}	
+}).items)]]></dw:set-payload>
+        </dw:transform-message>
+        <object-to-string-transformer encoding="UTF-8" mimeType="application/csv" doc:name="UTF-8 Encode"/>
+        <logger message="Writing file" level="INFO" doc:name="Logger - Writing file" category="Smart Insights"/>
+    </sub-flow>
+</mule>
